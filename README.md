@@ -34,16 +34,21 @@ Fur Affinity only:
 
 ## FurAffinity → Discord Link Copier
 
-Adds two buttons under the title of every Fur Affinity submission page (`/view/` and `/full/`):
+**Right-click a post's picture** on Fur Affinity (a gallery or browse thumbnail, or the picture on a submission page) and pick an option. Right-clicking anywhere else gives you the browser's normal menu.
 
-| Button | What gets copied | How it looks in Discord |
+| Menu option | What gets copied | How it looks in Discord |
 |---|---|---|
-| **Discord: link** | `[Title by Artist](<https://www.furaffinity.net/view/123/>)` | Clickable "Title by Artist" text, no preview box |
-| **Discord: link + image** | The link above, plus the direct `d.furaffinity.net` image URL on the next line | Clickable title with the full image embedded under it |
+| **Copy for Discord (link + image)** | `[Title by Artist](<https://www.furaffinity.net/view/123/>)` plus the full `d.furaffinity.net` image on the next line | Clickable "Title by Artist" with the full image under it |
+| **Copy for Discord (spoiler image)** | Same, with the image wrapped in `\|\|spoiler\|\|` | The image is hidden until clicked |
+| **Copy for Discord (link only)** | Just the hyperlink | Clickable title, no preview box |
+| **Copy image (full size)** | The full-size picture itself | Paste it to upload it as an image |
 
-- Mature and Adult submissions get their image wrapped in `||spoiler||` automatically. **Shift-click** the button to flip that.
-- Paste into any Discord message. Post Mature/Adult art only in age-restricted channels.
-- It only reads the page you're on. It doesn't need access to any other site.
+- Every option uses the full-size file from the post, never the small thumbnail.
+- Mature and Adult posts are spoilered automatically with the first option too.
+- **Shift + right-click** on a picture opens the browser's normal menu.
+- For thumbnails, the script quietly loads that post's page to get the title, artist and full image. It only talks to Fur Affinity (`furaffinity.net` and its image server `d.furaffinity.net`).
+- Copied images are pasted as PNG, so animated GIFs paste as a still frame. Use a Discord option for those.
+- Post Mature/Adult art only in age-restricted Discord channels.
 
 ## Permissions (Fur Affinity Price Tiers script)
 
