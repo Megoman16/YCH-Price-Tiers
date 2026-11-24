@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fur Affinity Price Tiers
 // @namespace    https://www.furaffinity.net/
-// @version      1.21
+// @version      1.22
 // @description  Price-tier chips under each Fur Affinity thumbnail (read from the submission's title + description), true-cost sort, "hide no price" filter, "Load more pages" button, auction-link chip
 // @match        https://www.furaffinity.net/*
 // @match        https://furaffinity.net/*
@@ -36,7 +36,7 @@
   const AUCTION_TTL_H = 6;          // a live auction's bid is re-read after this many hours (ended ones keep the normal 3 days)
   const RAMP_AFTER = 15;            // after FA pushes back we drop to 1 at a time, then add one more every this many good reads
   const TIER_CACHE_DAYS = 3;        // FA descriptions get edited ("SOLD", new prices), so re-read after this
-  const TIER_CACHE_MAX = 3000;
+  const TIER_CACHE_MAX = 10000;     // most submissions kept (saved in Tampermonkey's storage, so no 5 MB site limit)
   const CACHE_SAVE_DELAY = 5000;
   const PAGES_DEFAULT = 1;          // starting value of the "Load [N] pages" box (it remembers what you type)
   const PAGES_MAX = 200;            // most pages one click may load
