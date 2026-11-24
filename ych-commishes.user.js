@@ -1,11 +1,16 @@
 // ==UserScript==
 // @name         YCH.Commishes Price Sorter + Tier Chips
 // @namespace    https://ych.commishes.com/
-// @version      5.17
+// @version      5.18
 // @description  Price sort (loads ALL listings first), a "Sort by true cost" toggle, and price-tier chips (grouped by section, with a true-cost chip) inside each card
 // @match        https://ych.commishes.com/*
 // @grant        none
 // @run-at       document-idle
+// @author       Megoman16
+// @homepageURL  https://github.com/Megoman16/YCH-Price-Tiers
+// @supportURL   https://github.com/Megoman16/YCH-Price-Tiers/issues
+// @updateURL    https://raw.githubusercontent.com/Megoman16/YCH-Price-Tiers/main/ych-commishes.user.js
+// @downloadURL  https://raw.githubusercontent.com/Megoman16/YCH-Price-Tiers/main/ych-commishes.user.js
 // ==/UserScript==
 
 (function () {
