@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         FurAffinity → Discord Link Copier
 // @namespace    https://github.com/Megoman16/YCH-Price-Tiers
-// @version      1.2.0
+// @version      1.2.1
 // @description  Right-click a Fur Affinity post's picture to copy a Discord-ready hyperlink ([Title by Artist](url)) with the full-size image, or the full-size image itself.
 // @author       Megoman16
 // @match        https://www.furaffinity.net/*
@@ -148,6 +148,12 @@
   async function pngFor(id) {
     const info = await getInfo(id);
     if (!info.imageUrl) throw new Error('no full-size image on this post');
+    if (/\.gif(\?|$)/i.test(info.imageUrl)) {
+      // A GIF pasted as a picture loses its animation, but Discord plays a GIF link.
+      const e = new Error('gif');
+      e.isGif = true;
+      throw e;
+    }
     return toPng(await fetchBlob(info.imageUrl));
   }
 
@@ -161,9 +167,18 @@
     } catch (e) {
       write = Promise.reject(e);
     }
+    // Stop an unhandled-rejection warning if the browser never reads the promise.
+    png.catch(() => {});
     write
       .then(() => toast('Copied full-size image!'))
       .catch(async (err) => {
+        const gif = await png.then(() => null, (e) => (e && e.isGif ? e : null));
+        if (gif) {
+          const info = await getInfo(id);
+          copy(info.imageUrl);
+          toast('GIF copied as a link, so it stays animated in Discord');
+          return;
+        }
         // Fallback: copy the full-size image address instead.
         try {
           const info = await getInfo(id);
