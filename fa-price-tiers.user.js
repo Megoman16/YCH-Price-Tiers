@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fur Affinity Price Tiers
 // @namespace    https://www.furaffinity.net/
-// @version      1.19
+// @version      1.20
 // @description  Price-tier chips under each Fur Affinity thumbnail (read from the submission's title + description), true-cost sort, "hide no price" filter, "Load more pages" button, auction-link chip
 // @match        https://www.furaffinity.net/*
 // @match        https://furaffinity.net/*
@@ -11,6 +11,11 @@
 // @grant        GM_setValue
 // @connect      *
 // @run-at       document-idle
+// @author       Megoman16
+// @homepageURL  https://github.com/Megoman16/YCH-Price-Tiers
+// @supportURL   https://github.com/Megoman16/YCH-Price-Tiers/issues
+// @updateURL    https://raw.githubusercontent.com/Megoman16/YCH-Price-Tiers/main/fa-price-tiers.user.js
+// @downloadURL  https://raw.githubusercontent.com/Megoman16/YCH-Price-Tiers/main/fa-price-tiers.user.js
 // ==/UserScript==
 
 (function () {
