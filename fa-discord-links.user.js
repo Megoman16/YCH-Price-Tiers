@@ -1,114 +1,186 @@
 // ==UserScript==
 // @name         FurAffinity → Discord Link Copier
-// @namespace    https://github.com/YOUR-USERNAME/fa-discord-links
-// @version      1.0.0
-// @description  Adds buttons on FurAffinity submissions that copy a Discord-ready hyperlink ([Title by Artist](url)), optionally with the direct image so it embeds.
-// @author       YOUR-USERNAME
-// @match        https://www.furaffinity.net/view/*
-// @match        https://www.furaffinity.net/full/*
-// @match        https://furaffinity.net/view/*
-// @match        https://furaffinity.net/full/*
+// @namespace    https://github.com/Megoman16/YCH-Price-Tiers
+// @version      1.1.0
+// @description  Right-click any Fur Affinity post and copy a Discord-ready hyperlink ([Title by Artist](url)) with the full image under it.
+// @author       Megoman16
+// @match        https://www.furaffinity.net/*
+// @match        https://furaffinity.net/*
 // @grant        GM_setClipboard
 // @run-at       document-idle
-// @updateURL    https://raw.githubusercontent.com/YOUR-USERNAME/fa-discord-links/main/fa-discord-links.user.js
-// @downloadURL  https://raw.githubusercontent.com/YOUR-USERNAME/fa-discord-links/main/fa-discord-links.user.js
+// @updateURL    https://raw.githubusercontent.com/Megoman16/YCH-Price-Tiers/main/fa-discord-links.user.js
+// @downloadURL  https://raw.githubusercontent.com/Megoman16/YCH-Price-Tiers/main/fa-discord-links.user.js
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  // ---------- Gather submission info ----------
-  const meta = (prop) =>
-    document.querySelector(`meta[property="${prop}"], meta[name="${prop}"]`)?.content?.trim() || '';
+  const ORIGIN = 'https://www.furaffinity.net';
+  const cache = new Map(); // id -> info
 
-  const idMatch = location.pathname.match(/\/(?:view|full)\/(\d+)/);
-  if (!idMatch) return;
-  const id = idMatch[1];
-  const pageUrl = `https://www.furaffinity.net/view/${id}/`;
+  // ---------- Read a submission page ----------
+  function readSubmission(doc, id) {
+    const meta = (p) =>
+      doc.querySelector(`meta[property="${p}"], meta[name="${p}"]`)?.content?.trim() || '';
 
-  // og:title looks like "Title by Artist -- Fur Affinity [dot] net"
-  const ogTitle = meta('og:title').replace(/\s*--\s*Fur Affinity.*$/i, '');
+    const ogTitle = meta('og:title').replace(/\s*--\s*Fur Affinity.*$/i, '');
+    let title =
+      doc.querySelector('.submission-title h2 p, .submission-title h2, .classic-submission-title h2')
+        ?.textContent.trim() || '';
+    let artist =
+      doc.querySelector('.submission-id-sub-container a strong, .c-usernameBlockSimple__displayName, .classic-submission-title a')
+        ?.textContent.trim().replace(/^~/, '') || '';
+    if ((!title || !artist) && ogTitle.includes(' by ')) {
+      const i = ogTitle.lastIndexOf(' by ');
+      title = title || ogTitle.slice(0, i);
+      artist = artist || ogTitle.slice(i + 4);
+    }
+    title = title || `Submission ${id}`;
 
-  let title =
-    document.querySelector('.submission-title h2 p, .submission-title h2, .classic-submission-title h2')
-      ?.textContent.trim() || '';
-  let artist =
-    document.querySelector('.submission-id-sub-container a strong, .c-usernameBlockSimple__displayName, .classic-submission-title a')
-      ?.textContent.trim().replace(/^~/, '') || '';
+    let imageUrl = doc.querySelector('.download a, a[href*="d.furaffinity.net"]')?.getAttribute('href') || '';
+    if (!imageUrl) {
+      const img = doc.querySelector('#submissionImg');
+      imageUrl = img?.getAttribute('data-fullview-src') || img?.getAttribute('src') || meta('og:image');
+    }
+    if (imageUrl.startsWith('//')) imageUrl = 'https:' + imageUrl;
 
-  if ((!title || !artist) && ogTitle.includes(' by ')) {
-    const i = ogTitle.lastIndexOf(' by ');
-    title = title || ogTitle.slice(0, i);
-    artist = artist || ogTitle.slice(i + 4);
+    const ratingText =
+      doc.querySelector('.rating-box, .rating .inline, .classic-submission-title + * .rating')?.textContent || '';
+
+    return {
+      id,
+      title,
+      artist,
+      imageUrl: /\.(png|jpe?g|gif|webp)(\?|$)/i.test(imageUrl) ? imageUrl : '',
+      sensitive: /mature|adult/i.test(ratingText),
+    };
   }
-  title = title || `Submission ${id}`;
 
-  // Direct image (d.furaffinity.net) — Discord embeds these as images.
-  const dl = document.querySelector('.download a, a[href*="d.furaffinity.net"]');
-  let imageUrl = dl?.getAttribute('href') || '';
-  if (!imageUrl) {
-    const img = document.querySelector('#submissionImg');
-    imageUrl = img?.getAttribute('data-fullview-src') || img?.getAttribute('src') || meta('og:image');
+  async function getInfo(id) {
+    if (cache.has(id)) return cache.get(id);
+    const here = location.pathname.match(/^\/(?:view|full)\/(\d+)/);
+    let info;
+    if (here && here[1] === id) {
+      info = readSubmission(document, id);
+    } else {
+      const res = await fetch(`${ORIGIN}/view/${id}/`, { credentials: 'include' });
+      if (!res.ok) throw new Error(`Fur Affinity answered ${res.status}`);
+      const doc = new DOMParser().parseFromString(await res.text(), 'text/html');
+      if (doc.querySelector('.redirect-message, #standardpage .notice-message') && !doc.querySelector('#submissionImg'))
+        throw new Error('Submission not visible (log in or check your content filter)');
+      info = readSubmission(doc, id);
+    }
+    cache.set(id, info);
+    return info;
   }
-  if (imageUrl.startsWith('//')) imageUrl = 'https:' + imageUrl;
-  const isImage = /\.(png|jpe?g|gif|webp)(\?|$)/i.test(imageUrl);
-
-  // Rating (General / Mature / Adult) — used to auto-spoiler non-General images.
-  const ratingText =
-    document.querySelector('.rating-box, .rating .inline, .classic-submission-title + * .rating')?.textContent || '';
-  const isSensitive = /mature|adult/i.test(ratingText);
 
   // ---------- Build Discord text ----------
-  // Escape characters that would break a Discord masked link.
   const esc = (s) => s.replace(/([\[\]\\*_~`|])/g, '\\$1');
-  const label = artist ? `${esc(title)} by ${esc(artist)}` : esc(title);
 
-  // <url> inside the masked link stops Discord from making FA's (weak) preview embed.
-  const linkOnly = `[${label}](<${pageUrl}>)`;
-
-  function linkWithImage(spoiler) {
-    if (!isImage) return linkOnly;
-    const img = spoiler ? `||${imageUrl}||` : imageUrl;
-    return `${linkOnly}\n${img}`;
+  function discordText(info, withImage, spoiler) {
+    const label = info.artist ? `${esc(info.title)} by ${esc(info.artist)}` : esc(info.title);
+    const link = `[${label}](<${ORIGIN}/view/${info.id}/>)`;
+    if (!withImage || !info.imageUrl) return link;
+    return `${link}\n${spoiler ? `||${info.imageUrl}||` : info.imageUrl}`;
   }
 
-  // ---------- UI ----------
-  function copy(text, btn) {
+  function copy(text) {
     if (typeof GM_setClipboard === 'function') GM_setClipboard(text, 'text');
     else navigator.clipboard.writeText(text);
-    const old = btn.textContent;
-    btn.textContent = 'Copied!';
-    setTimeout(() => (btn.textContent = old), 1200);
   }
 
-  function makeBtn(text, tip, onClick) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = text;
-    b.title = tip;
-    Object.assign(b.style, {
-      background: '#5865F2', color: '#fff', border: 'none', borderRadius: '4px',
-      padding: '6px 10px', margin: '4px 6px 4px 0', cursor: 'pointer',
-      font: '600 13px sans-serif',
+  // ---------- Toast ----------
+  function toast(msg, isError) {
+    const t = document.createElement('div');
+    t.textContent = msg;
+    Object.assign(t.style, {
+      position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
+      background: isError ? '#c0392b' : '#5865F2', color: '#fff', padding: '8px 14px',
+      borderRadius: '6px', font: '600 13px sans-serif', zIndex: 2147483647,
+      boxShadow: '0 4px 12px rgba(0,0,0,.4)',
     });
-    b.addEventListener('click', (e) => { e.preventDefault(); onClick(e, b); });
-    return b;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), isError ? 3500 : 1600);
   }
 
-  const bar = document.createElement('div');
-  bar.id = 'fa-discord-bar';
-  bar.style.margin = '8px 0';
+  async function copyFor(id, withImage, spoilerMode) {
+    try {
+      const info = await getInfo(id);
+      const spoiler = spoilerMode === 'auto' ? info.sensitive : spoilerMode === 'on';
+      copy(discordText(info, withImage, spoiler));
+      toast(withImage && !info.imageUrl ? 'Copied link (no image found)' : 'Copied for Discord!');
+    } catch (err) {
+      toast(`Couldn't copy: ${err.message}`, true);
+    }
+  }
 
-  bar.append(
-    makeBtn('Discord: link', 'Copies [Title by Artist](link) with no embed', (e, b) => copy(linkOnly, b)),
-    makeBtn(
-      'Discord: link + image',
-      'Copies the hyperlink plus the direct image so Discord embeds it.\nMature/Adult images are spoilered automatically. Shift-click to toggle spoiler.',
-      (e, b) => copy(linkWithImage(isSensitive !== e.shiftKey), b)
-    )
-  );
+  // ---------- Right-click menu ----------
+  function findPostId(target) {
+    const link = target.closest('a[href*="/view/"], a[href*="/full/"]');
+    const m = link?.getAttribute('href')?.match(/\/(?:view|full)\/(\d+)/);
+    if (m) return m[1];
+    const fig = target.closest('figure[id^="sid-"], [id^="sid-"]');
+    if (fig) return fig.id.replace(/\D/g, '');
+    // The big picture on a submission page
+    if (target.closest('#submissionImg, .submission-area, #columnpage .submission-content img')) {
+      const here = location.pathname.match(/^\/(?:view|full)\/(\d+)/);
+      if (here) return here[1];
+    }
+    return null;
+  }
 
-  const anchor =
-    document.querySelector('.submission-title, .classic-submission-title, #submissionImg') || document.body.firstElementChild;
-  anchor.parentNode.insertBefore(bar, anchor.nextSibling);
+  let menu = null;
+  function closeMenu() { menu?.remove(); menu = null; }
+
+  function openMenu(x, y, id) {
+    closeMenu();
+    menu = document.createElement('div');
+    Object.assign(menu.style, {
+      position: 'fixed', left: `${x}px`, top: `${y}px`, zIndex: 2147483647,
+      background: '#2b2d31', border: '1px solid #1e1f22', borderRadius: '6px',
+      padding: '4px', minWidth: '220px', boxShadow: '0 8px 20px rgba(0,0,0,.5)',
+      font: '13px sans-serif', color: '#dbdee1',
+    });
+
+    const items = [
+      ['Copy for Discord (link + image)', () => copyFor(id, true, 'auto')],
+      ['Copy for Discord (spoiler image)', () => copyFor(id, true, 'on')],
+      ['Copy for Discord (link only)', () => copyFor(id, false, 'off')],
+    ];
+    for (const [label, fn] of items) {
+      const it = document.createElement('div');
+      it.textContent = label;
+      Object.assign(it.style, { padding: '7px 10px', borderRadius: '4px', cursor: 'pointer' });
+      it.onmouseenter = () => (it.style.background = '#5865F2');
+      it.onmouseleave = () => (it.style.background = '');
+      it.onclick = (e) => { e.stopPropagation(); closeMenu(); fn(); };
+      menu.appendChild(it);
+    }
+    const hint = document.createElement('div');
+    hint.textContent = 'Shift + right-click for the normal menu';
+    Object.assign(hint.style, { padding: '5px 10px 3px', fontSize: '11px', color: '#949ba4' });
+    menu.appendChild(hint);
+
+    document.body.appendChild(menu);
+    // Keep it on screen
+    const r = menu.getBoundingClientRect();
+    if (r.right > innerWidth) menu.style.left = `${Math.max(4, innerWidth - r.width - 4)}px`;
+    if (r.bottom > innerHeight) menu.style.top = `${Math.max(4, innerHeight - r.height - 4)}px`;
+
+    // Start loading the post now so the copy is instant
+    getInfo(id).catch(() => {});
+  }
+
+  document.addEventListener('contextmenu', (e) => {
+    if (e.shiftKey) { closeMenu(); return; }
+    const id = findPostId(e.target);
+    if (!id) { closeMenu(); return; }
+    e.preventDefault();
+    openMenu(e.clientX, e.clientY, id);
+  }, true);
+
+  document.addEventListener('mousedown', (e) => { if (menu && !menu.contains(e.target)) closeMenu(); }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+  addEventListener('scroll', closeMenu, { passive: true });
+  addEventListener('blur', closeMenu);
 })();
