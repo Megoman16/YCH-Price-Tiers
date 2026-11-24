@@ -1,11 +1,16 @@
 // ==UserScript==
 // @name         YCH.art Price Tiers
 // @namespace    https://ych.art/
-// @version      1.22
+// @version      1.23
 // @description  Price tiers under each YCH.art card, equal row heights, optional "Load all" button, optional slow background prefetch, price sort + true-cost sort in the sort dropdown (sorts what is loaded, remembers your choice)
 // @match        https://ych.art/*
 // @grant        none
 // @run-at       document-idle
+// @author       Megoman16
+// @homepageURL  https://github.com/Megoman16/YCH-Price-Tiers
+// @supportURL   https://github.com/Megoman16/YCH-Price-Tiers/issues
+// @updateURL    https://raw.githubusercontent.com/Megoman16/YCH-Price-Tiers/main/ych-art.user.js
+// @downloadURL  https://raw.githubusercontent.com/Megoman16/YCH-Price-Tiers/main/ych-art.user.js
 // ==/UserScript==
 
 (function () {
