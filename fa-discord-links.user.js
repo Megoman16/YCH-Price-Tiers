@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         FurAffinity → Discord Link Copier
 // @namespace    https://github.com/Megoman16/YCH-Price-Tiers
-// @version      1.1.0
-// @description  Right-click any Fur Affinity post and copy a Discord-ready hyperlink ([Title by Artist](url)) with the full image under it.
+// @version      1.2.0
+// @description  Right-click a Fur Affinity post's picture to copy a Discord-ready hyperlink ([Title by Artist](url)) with the full-size image, or the full-size image itself.
 // @author       Megoman16
 // @match        https://www.furaffinity.net/*
 // @match        https://furaffinity.net/*
 // @grant        GM_setClipboard
+// @grant        GM_xmlhttpRequest
+// @connect      d.furaffinity.net
 // @run-at       document-idle
 // @updateURL    https://raw.githubusercontent.com/Megoman16/YCH-Price-Tiers/main/fa-discord-links.user.js
 // @downloadURL  https://raw.githubusercontent.com/Megoman16/YCH-Price-Tiers/main/fa-discord-links.user.js
@@ -37,11 +39,16 @@
     }
     title = title || `Submission ${id}`;
 
-    let imageUrl = doc.querySelector('.download a, a[href*="d.furaffinity.net"]')?.getAttribute('href') || '';
-    if (!imageUrl) {
-      const img = doc.querySelector('#submissionImg');
-      imageUrl = img?.getAttribute('data-fullview-src') || img?.getAttribute('src') || meta('og:image');
-    }
+    // Full-size file, best source first: the Download button, then the full view
+    // of the main picture. Never the gallery thumbnail (t.furaffinity.net).
+    const img = doc.querySelector('#submissionImg');
+    const candidates = [
+      doc.querySelector('.download a, .download-logged-in a, #page-submission .actions a[href*="d.furaffinity.net/art/"]')?.getAttribute('href'),
+      doc.querySelector('a[href*="d.furaffinity.net/art/"]')?.getAttribute('href'),
+      img?.getAttribute('data-fullview-src'),
+      img?.getAttribute('src'),
+    ];
+    let imageUrl = candidates.find((u) => u && /d\.furaffinity\.net\/art\//.test(u)) || '';
     if (imageUrl.startsWith('//')) imageUrl = 'https:' + imageUrl;
 
     const ratingText =
@@ -114,18 +121,80 @@
     }
   }
 
+  // ---------- Copy the image itself ----------
+  function fetchBlob(url) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url,
+        responseType: 'blob',
+        onload: (r) => (r.status >= 200 && r.status < 300 ? resolve(r.response) : reject(new Error(`image answered ${r.status}`))),
+        onerror: () => reject(new Error('image download failed')),
+      });
+    });
+  }
+
+  // Browsers only accept PNG on the clipboard, so redraw the image as PNG.
+  async function toPng(blob) {
+    if (blob.type === 'image/png') return blob;
+    const bmp = await createImageBitmap(blob);
+    const canvas = document.createElement('canvas');
+    canvas.width = bmp.width;
+    canvas.height = bmp.height;
+    canvas.getContext('2d').drawImage(bmp, 0, 0);
+    return new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('convert failed'))), 'image/png'));
+  }
+
+  async function pngFor(id) {
+    const info = await getInfo(id);
+    if (!info.imageUrl) throw new Error('no full-size image on this post');
+    return toPng(await fetchBlob(info.imageUrl));
+  }
+
+  function copyImage(id) {
+    // ClipboardItem must be created right inside the click, with the image
+    // passed as a promise, or the browser refuses because the click "expired".
+    const png = pngFor(id);
+    let write;
+    try {
+      write = navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+    } catch (e) {
+      write = Promise.reject(e);
+    }
+    write
+      .then(() => toast('Copied full-size image!'))
+      .catch(async (err) => {
+        // Fallback: copy the full-size image address instead.
+        try {
+          const info = await getInfo(id);
+          if (!info.imageUrl) throw err;
+          copy(info.imageUrl);
+          toast("Your browser wouldn't copy the picture, so the full-size image link was copied instead", true);
+        } catch (e2) {
+          toast(`Couldn't copy image: ${e2.message || err.message}`, true);
+        }
+      });
+  }
+
   // ---------- Right-click menu ----------
+  // Only right-clicks on a post's picture get the custom menu.
   function findPostId(target) {
-    const link = target.closest('a[href*="/view/"], a[href*="/full/"]');
+    const img = target.closest('img');
+    if (!img) return null;
+
+    // The main picture on a submission page
+    if (img.id === 'submissionImg') {
+      const here = location.pathname.match(/^\/(?:view|full)\/(\d+)/);
+      return here ? here[1] : null;
+    }
+
+    // A thumbnail that links to a post
+    const link = img.closest('a[href*="/view/"], a[href*="/full/"]');
     const m = link?.getAttribute('href')?.match(/\/(?:view|full)\/(\d+)/);
     if (m) return m[1];
-    const fig = target.closest('figure[id^="sid-"], [id^="sid-"]');
+
+    const fig = img.closest('figure[id^="sid-"]');
     if (fig) return fig.id.replace(/\D/g, '');
-    // The big picture on a submission page
-    if (target.closest('#submissionImg, .submission-area, #columnpage .submission-content img')) {
-      const here = location.pathname.match(/^\/(?:view|full)\/(\d+)/);
-      if (here) return here[1];
-    }
     return null;
   }
 
@@ -146,6 +215,7 @@
       ['Copy for Discord (link + image)', () => copyFor(id, true, 'auto')],
       ['Copy for Discord (spoiler image)', () => copyFor(id, true, 'on')],
       ['Copy for Discord (link only)', () => copyFor(id, false, 'off')],
+      ['Copy image (full size)', () => copyImage(id)],
     ];
     for (const [label, fn] of items) {
       const it = document.createElement('div');
