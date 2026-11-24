@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fur Affinity Price Tiers
 // @namespace    https://www.furaffinity.net/
-// @version      1.20
+// @version      1.21
 // @description  Price-tier chips under each Fur Affinity thumbnail (read from the submission's title + description), true-cost sort, "hide no price" filter, "Load more pages" button, auction-link chip
 // @match        https://www.furaffinity.net/*
 // @match        https://furaffinity.net/*
@@ -879,22 +879,25 @@
 
   let pop = null;
   function showPop(box) {
-    const lines = box._lines || [];
+    let lines = box._lines;
+    if (!lines) { try { lines = JSON.parse(box.dataset.lines || '[]'); } catch (e) { lines = []; } }
     if (!lines.length) return;
-    if (!pop) {
+    if (!pop || !pop.isConnected) {
       pop = document.createElement('div');
-      pop.style.cssText = CSS.pop;
-      document.body.appendChild(pop);
+      pop.className = 'fa-tiers-pop';
+      pop.style.cssText = 'all:initial;' + CSS.pop;
+      // on <html>, not <body>: FA's page styles can't reach it there
+      document.documentElement.appendChild(pop);
       window.addEventListener('scroll', hidePop, { passive: true });
     }
     pop.textContent = '';
     lines.forEach((l, i) => {
       const d = document.createElement('div');
       d.textContent = l;
-      d.style.cssText = 'white-space:normal;overflow-wrap:anywhere;padding:3px 0' + (i ? ';border-top:1px solid rgba(255,255,255,.15)' : '');
+      d.style.cssText = 'all:initial;display:block;color:#fff;font:12px/1.4 system-ui,sans-serif;white-space:normal;overflow-wrap:anywhere;padding:3px 0' + (i ? ';border-top:1px solid rgba(255,255,255,.15)' : '');
       pop.appendChild(d);
     });
-    pop.style.display = 'block';
+    pop.style.setProperty('display', 'block', 'important');
     const r = box.getBoundingClientRect();
     const w = pop.offsetWidth, h = pop.offsetHeight;
     const left = Math.min(Math.max(8, r.left), window.innerWidth - w - 8);
@@ -903,7 +906,29 @@
     pop.style.left = left + 'px';
     pop.style.top = Math.max(8, top) + 'px';
   }
-  function hidePop() { if (pop) pop.style.display = 'none'; }
+  function hidePop() { if (pop) pop.style.setProperty('display', 'none', 'important'); }
+
+  // One listener for the whole page (works for every card, including ones FA re-draws or copies):
+  // hover a chip box to see every price line; click "+N more" / "show less" to expand the chips in place.
+  let hoverBox = null;
+  document.addEventListener('mouseover', (e) => {
+    const box = e.target && e.target.closest ? e.target.closest('.fa-tiers') : null;
+    if (box === hoverBox) return;
+    hoverBox = box;
+    if (box) showPop(box); else hidePop();
+  }, true);
+  document.addEventListener('click', (e) => {
+    const t = e.target && e.target.closest ? e.target.closest('[data-fa-toggle]') : null;
+    if (!t) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const card = t.closest('.fa-tiers') && t.closest('.fa-tiers').parentElement;
+    if (!card || !card._faEntry) return;
+    card._faExpanded = !card._faExpanded;
+    hidePop();
+    hoverBox = null;
+    renderCard(card, card._faEntry);
+  }, true);
 
   // FA positions the caption over the bottom of the thumbnail box; once the box grows, the caption sat on top of
   // the chips. Put the caption back in the normal flow, and if anything still overlaps, push the chips down.
@@ -949,6 +974,7 @@
   }
 
   function renderCard(card, entry) {
+    card._faEntry = entry;
     applying = true;
     try {
       card.querySelectorAll('.fa-tiers').forEach((e) => e.remove());
@@ -1007,10 +1033,11 @@
       box.appendChild(top);
       if (rfRow) box.appendChild(rfRow);
 
-      // Tier chips, grouped by section, up to CHIPS_SHOWN of them
+      // Tier chips, grouped by section, up to CHIPS_SHOWN of them ("+N more" shows the rest)
+      const limit = card._faExpanded ? Infinity : CHIPS_SHOWN;
       let shown = 0, lastSection = null, row = null;
       tiers.forEach((t) => {
-        if (shown >= CHIPS_SHOWN) return;
+        if (shown >= limit) return;
         if (t.section !== lastSection || !row) {
           if (t.section) {
             const h = document.createElement('div');
@@ -1030,12 +1057,18 @@
         ));
         shown++;
       });
-      if (tiers.length > shown && row) row.appendChild(makeChip('+' + (tiers.length - shown) + ' more', '', CSS.more));
+      const toggle = (label) => {
+        const c = makeChip(label, '', CSS.more + ';cursor:pointer', 'button');
+        c.type = 'button';
+        c.dataset.faToggle = '1';
+        return c;
+      };
+      if (tiers.length > shown && row) row.appendChild(toggle('+' + (tiers.length - shown) + ' more'));
+      else if (card._faExpanded && tiers.length > CHIPS_SHOWN && row) row.appendChild(toggle('show less'));
 
       box._lines = Array.from(new Set(tiers.map((t) => t.line.replace(/\s+/g, ' ').trim())));
       if (rf && rf.text) box._lines.unshift((rf.site || 'Raffle') + ' post: ' + rf.text);
-      box.addEventListener('mouseenter', () => showPop(box));
-      box.addEventListener('mouseleave', hidePop);
+      try { box.dataset.lines = JSON.stringify(box._lines); } catch (e) {}
 
       // Let the thumbnail grow so the chips show in full
       card.style.setProperty('height', 'auto', 'important');
